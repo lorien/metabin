@@ -1,0 +1,284 @@
+<head>
+<title>Secured Paste Bin</title>
+<meta name="robots" content="noindex"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/5.0.0/normalize.min.css" integrity="sha256-t2/7smZfgrST4FS1DT0bs/KotCM74XlcqZN5Vu7xlrw=" crossorigin="anonymous" />
+<style>
+    .dos {
+        font-family: fixedsys, LucidaTerminal, 'Ubuntu Mono', monospace;
+    }
+    .dos, textarea, input, button {
+        background: #1c1c1c;
+    }
+    .dos {
+        color: #2f9912;
+    }
+
+    a {
+        color: yellow;
+        text-decoration: none;
+    }
+    .dump-content {
+        padding: 1em;
+        color: #e3e3e3;
+    }
+    textarea, input, button, select, .dump-content {
+        background-color: #292929;
+        border: none;
+    }
+    textarea, input, button, select {
+        color: #e3e3e3;
+        outline: none;
+        font-size: inherit;
+        font-family: inherit;
+        padding: 0.2em 0.5em;
+    }
+    textarea {
+        padding: 0.5em;
+    }
+    button {
+        background: none;
+        color: yellow;
+        cursor: pointer;
+    }
+    button:disabled {
+        color: grey;
+        border-color: grey;
+        cursor: default;
+    }
+    .message-box {
+        margin-top: 1em;
+    }
+    .dump-password-form {
+        margin-top: 1em;
+    }
+</style>
+</head>
+<body class="dos" style="margin: 1em">
+<a href="#">upload</a>
+&nbsp;
+<a href="#help/faq">faq</a>
+<home></home>
+<dump></dump>
+<faq></faq>
+<page404></page>
+
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js" integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8=" crossorigin="anonymous"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/sjcl/1.0.6/sjcl.min.js" integrity="sha256-7VEzvbWjCTLLvO8urPO0gk1zqPsLAZVIADdKrwtBbWY=" crossorigin="anonymous"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/riot/2.6.2/riot.js" integrity="sha256-T7LwPaiksb1Z5pj4mToQi5ajPL1k0eWnmsGBhTsrZv0=" crossorigin="anonymous"></script>
+
+<script type="text/template" id="tag_home_tpl">
+<p><span style="font-weight: bold; color: red" if={data_error}>{ data_error }</span></p>
+<form method="post" action="javascript:" id="dump-form">
+    <p><textarea style="width: 100%; height: 50%" name="data" onkeyup="{ onFormChange }" onchange="{ onFormChange }"></textarea></p>
+    <input style="display: none" type="text" name="iambot" value="" />
+    <p>
+        <label>password</label>
+        <input type="text" name="password" onkeyup="{ onFormChange }" onchange="{ onFormChange }" value=""></input>
+        &nbsp;
+        <button id="submit" type="button" onclick="{ submitForm }">Encrypt &amp; Submit</button>
+    </p>
+</form>
+</script>
+
+<script type="text/template" id="tag_dump_tpl">
+<div class="message-box" if="{ error }">
+    <div style="color: red">{ error }</div>
+</div>
+<div if="{ dump }">
+    <div class="message-box">
+        <div if="{ runtimeError }" style="color: red">{ runtimeError }</div>
+    </div>
+    <pre id="dump-encrypted" style="display: none;">{ dump.data }</pre>
+    <pre if="{ !encrypted }" class="dump-content" id="dump-content">{ content }</pre>
+    <div class="dump-password-form" id="password-form" if="{ encrypted }">
+        <form action="javascript:">
+            password:
+            <input type="text" name="password">
+            <button type="button" onclick="{ decrypt }">decrypt</button>
+        </form>
+    </div>
+</div>
+</script>
+
+<script type="text/template" id="tag_faq_tpl">
+<pre>
+--- [What is it?]
+
+This is crazy shit.
+
+--- [Open source?]
+
+Yep, just look at the source of this page :)
+</pre>
+</script>
+
+<script type="text/template" id="tag_page404_tpl">
+<h1>Requested URL is not found</h1>
+</script>
+
+<script>
+function tag_home(opts) {
+    this.submitForm = function() {
+        var isbot = $('input[name="iambot"]').val();
+        if (isbot) {
+            return;
+        }
+        var pwd = $('input[name="password"]').val();
+        if (!pwd) {
+            alert('Password is empty');
+        } else {
+            var data = $('textarea[name="data"]').val(); 
+            if (!data) {
+                alert('Data is empty');
+            } else {
+                var encData = sjcl.encrypt(pwd, data, {mode: 'gcm', ts: 128});
+                var encData = sjcl.codec.utf8String.toBits(encData);
+                var encData = sjcl.codec.base64.fromBits(encData);
+                var encData = encodeURIComponent(encData);
+                //console.log('[' + encData + ']');
+                //var encData = 'abc';
+
+                var query = 
+                    'use "http://isithackday.com/hacks/htmlpost/htmlpost.xml" as htmlpost;'
+                    + ' select * from htmlpost where'
+                    + ' url="http://dumpz.org"'
+                    + ' and postdata="' + encData + '" and xpath="//*"';
+
+                $.ajax({
+                    url: 'https://query.yahooapis.com/v1/public/yql',
+                    jsonp: 'callback',
+                    dataType: 'jsonp',
+                    data: {
+                        'q': query,
+                        'format': 'json',
+                        'diagnostics': 'true',
+                        //'env': 'store://datatables.org/alltableswithkeys'
+                    },
+                    success: function(data) {
+                        console.log(data);
+                        var url = data.query.results.postresult.body;
+                        var remoteDumpId = url.match(/.org\/(\d+)\//)[1];
+                        var dumpId = 'dumpz-' + remoteDumpId;
+                        riot.route(dumpId);
+                    },
+                });
+            }
+        }
+    }
+
+    this.buildYQLUrl = function(encData) {
+        var donorSubmitUrl = 'http://dumpz.org'
+        var query = 
+            'use "http://isithackday.com/hacks/htmlpost/htmlpost.xml" as htmlpost; '
+            ' select * from htmlpost where url="' + donorSubmitUrl + '"'
+            " and postdata='" + encData + "' and xpath='//*'";
+
+        return 'https://query.yahooapis.com/v1/public/yql?q=' + encodeURIComponent(query)
+            + '&format=json&diagnostics=true&'
+            + '&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys';//&callback=zzz'
+    }
+
+    this.onFormChange = function() {
+        var data = $('textarea[name="data"]').val();
+        var pwd = $('input[name="password"]').val();
+        if (data && pwd) {
+            $('button#submit').attr('disabled', false);
+        } else {
+            $('button#submit').attr('disabled', true);
+        }
+    }
+};
+
+function tag_dump(opts) {
+    var self = this;
+
+    var remoteDumpId = opts.dump_id.match(/dumpz-(\d+)/)[1];
+    var query = 
+        'select * from json where'
+        + ' url="http://dumpz.org/api/dump/' + remoteDumpId + '"'
+        + ' ';
+
+    self.counter = 0;
+
+    self.requestData = function() {
+        $.ajax({
+            url: 'https://query.yahooapis.com/v1/public/yql',
+            jsonp: 'callback',
+            dataType: 'jsonp',
+            data: {
+                'q': query,
+                'format': 'json',
+                'diagnostics': 'true',
+                'env': 'store://datatables.org/alltableswithkeys'
+            },
+            success: function(data) {
+                self.counter += 1;
+                if (!data.query.results) {
+                    if (self.counter < 10) {
+                        self.requestData();
+                    }
+                } else {
+                    console.log(data);
+                    var bytes = decodeURIComponent(data.query.results.json.content);
+                    self.dump = {data: bytes};
+                    self.encrypted = true;
+                    self.update();
+                }
+            },
+        });
+    }
+    self.requestData();
+
+    this.decrypt = function() {
+        var pwd = $('input[name="password"]').val();
+        if (pwd) {
+            var data = $('#dump-encrypted').text();
+            if (data[0] != '{') {
+                // Backward-compatiliby with b64-encoded data
+                var data = sjcl.codec.utf8String.fromBits(
+                    sjcl.codec.base64.toBits(data));
+            }
+            self.runtimeError = false;
+            try {
+                this.content = sjcl.decrypt(pwd, data);
+                self.encrypted = false;
+            } catch(exc) {
+                console.log(exc);
+                self.runtimeError = 'Password is invalid';
+            }
+        }
+    }
+}
+
+riot.tag('home', tag_home_tpl.innerHTML, tag_home);
+riot.tag('dump', tag_dump_tpl.innerHTML, tag_dump);
+riot.tag('faq', tag_faq_tpl.innerHTML, function(){});
+riot.tag('page404', tag_page404_tpl.innerHTML, function(){});
+
+mountedContentTag = null;
+
+riot.route(function(part1, part2) {
+    console.log('[route]: part1=' + part1 + ', part2=' + part2);
+    if (mountedContentTag) {
+        mountedContentTag.unmount(true);
+    }
+    if (!part1) {
+        console.log('[route]: home');
+        mountedContentTag = riot.mount('home')[0];
+    } else if (part1 && !part2) {
+        console.log('[route]: dump');
+        mountedContentTag = riot.mount('dump', {dump_id: part1})[0];
+    } else if (part1 == 'help' && part2 == 'faq') {
+        console.log('[route]: faq');
+        mountedContentTag = riot.mount('faq')[0];
+    } else {
+        console.log('[route]: page404');
+        mountedContentTag = riot.mount('page404')[0];
+    }
+});
+
+riot.route.start(true);
+</script>
+<script>
+</script>
+</body>
