@@ -75,6 +75,11 @@
         <label>password</label>
         <input type="text" name="password" onkeyup="{ onFormChange }" onchange="{ onFormChange }" value=""></input>
         &nbsp;
+        <label>storage</label>
+        <select name="storage">
+            <option value="codepad">codepad.org</option>
+            <option value="dumpz">dumpz.org</option>
+        </select>
         <button id="submit" type="button" onclick="{ submitForm }">Encrypt &amp; Submit</button>
     </p>
 </form>
@@ -102,13 +107,7 @@
 
 <script type="text/template" id="tag_faq_tpl">
 <pre>
---- [What is it?]
-
-This is crazy shit.
-
---- [Open source?]
-
-Yep, just look at the source of this page :)
+{ content }
 </pre>
 </script>
 
@@ -118,6 +117,32 @@ Yep, just look at the source of this page :)
 
 <script>
 function tag_home(opts) {
+    var self = this;
+
+    this.prepareStorageRequest = function(storage, data) {
+        if (storage == 'dumpz') {
+            var postUrl = 'http://dumpz.org'
+            var postData = encodeURIComponent(data);
+            var xpath = '//*';
+        } else if (storage == 'codepad') {
+            var postUrl = 'http://codepad.org'
+            var postData = 'code=' + encodeURIComponent(data) + '&lang=Plain%20Text';
+            var xpath = "//a[contains(text(), 'raw code')]";
+        }
+        return {postUrl: postUrl, postData: postData, xpath: xpath};
+    }
+
+    this.parseDumpId = function(storage, yqlResult) {
+        if (storage == 'dumpz') {
+            var url = yqlResult.query.results.postresult.body;
+            var storageId = url.match(/\.org\/(\d+)\//)[1];
+        } else if (storage == 'codepad') {
+            var url = yqlResult.query.results.postresult.a.href;
+            var storageId = url.match(/\.org\/(\w+)\//)[1];
+        }
+        return storage + '-' + storageId;
+    }
+
     this.submitForm = function() {
         var isbot = $('input[name="iambot"]').val();
         if (isbot) {
@@ -134,15 +159,15 @@ function tag_home(opts) {
                 var encData = sjcl.encrypt(pwd, data, {mode: 'gcm', ts: 128});
                 var encData = sjcl.codec.utf8String.toBits(encData);
                 var encData = sjcl.codec.base64.fromBits(encData);
-                var encData = encodeURIComponent(encData);
-                //console.log('[' + encData + ']');
-                //var encData = 'abc';
+                var storage = $('select[name="storage"]').val();
+
+                var req = self.prepareStorageRequest(storage, encData);
 
                 var query = 
                     'use "http://isithackday.com/hacks/htmlpost/htmlpost.xml" as htmlpost;'
                     + ' select * from htmlpost where'
-                    + ' url="http://dumpz.org"'
-                    + ' and postdata="' + encData + '" and xpath="//*"';
+                    + ' url="' + req.postUrl + '"'
+                    + ' and postdata="' + req.postData + '" and xpath="' + req.xpath + '"';
 
                 $.ajax({
                     url: 'https://query.yahooapis.com/v1/public/yql',
@@ -154,11 +179,10 @@ function tag_home(opts) {
                         'diagnostics': 'true',
                         //'env': 'store://datatables.org/alltableswithkeys'
                     },
-                    success: function(data) {
+                    success: function(yqlResult) {
                         console.log(data);
-                        var url = data.query.results.postresult.body;
-                        var remoteDumpId = url.match(/.org\/(\d+)\//)[1];
-                        var dumpId = 'dumpz-' + remoteDumpId;
+                        var dumpId = self.parseDumpId(storage, yqlResult);
+                        console.log(dumpId);
                         riot.route(dumpId);
                     },
                 });
@@ -192,11 +216,37 @@ function tag_home(opts) {
 function tag_dump(opts) {
     var self = this;
 
-    var remoteDumpId = opts.dump_id.match(/dumpz-(\d+)/)[1];
+    this.prepareStorageRequest = function(storage, dumpId) {
+        if (storage == 'dumpz') {
+            var url = 'http://dumpz.org/api/dump/' + dumpId;
+            var type = 'json';
+        } else if (storage == 'codepad') {
+            var url = 'http://codepad.org/' + dumpId + '/raw.txt';
+            var type = 'html';
+        }
+        return {url: url, type: type};
+    }
+
+    this.parseDump = function(storage, yqlResponse) {
+        if (storage == 'dumpz') {
+            var data = decodeURIComponent(yqlResponse.query.results.json.content);
+        } else if (storage == 'codepad') {
+            var data = yqlResponse.query.results.body;
+        }
+        return {
+            data: data
+        }
+    }
+
+    var idParts = opts.dumpId.match(/^(\w+)-(\w+)$/);
+    var storage = idParts[1];
+    var storageDumpId = idParts[2];
+
+    var req = this.prepareStorageRequest(storage, storageDumpId);
+
     var query = 
-        'select * from json where'
-        + ' url="http://dumpz.org/api/dump/' + remoteDumpId + '"'
-        + ' ';
+        'select * from ' + req.type + ' where'
+        + ' url="' + req.url + '"';
 
     self.counter = 0;
 
@@ -209,18 +259,16 @@ function tag_dump(opts) {
                 'q': query,
                 'format': 'json',
                 'diagnostics': 'true',
-                'env': 'store://datatables.org/alltableswithkeys'
+                //'env': 'store://datatables.org/alltableswithkeys'
             },
-            success: function(data) {
+            success: function(yqlResponse) {
                 self.counter += 1;
-                if (!data.query.results) {
+                if (!yqlResponse.query.results) {
                     if (self.counter < 10) {
                         self.requestData();
                     }
                 } else {
-                    console.log(data);
-                    var bytes = decodeURIComponent(data.query.results.json.content);
-                    self.dump = {data: bytes};
+                    self.dump = self.parseDump(storage, yqlResponse);
                     self.encrypted = true;
                     self.update();
                 }
@@ -250,9 +298,43 @@ function tag_dump(opts) {
     }
 }
 
+function tag_faq(opts) {
+    var self = this;
+    var query = 
+        'select * from html where url = '
+        + '"https://raw.githubusercontent.com/lorien/metabin/master/README.rst"';
+
+    self.counter = 0;
+
+    self.requestData = function() {
+        $.ajax({
+            url: 'https://query.yahooapis.com/v1/public/yql',
+            jsonp: 'callback',
+            dataType: 'jsonp',
+            data: {
+                'q': query,
+                'format': 'json',
+                'diagnostics': 'true',
+            },
+            success: function(yqlResponse) {
+                self.counter += 1;
+                if (!yqlResponse.query.results) {
+                    if (self.counter < 10) {
+                        self.requestData();
+                    }
+                } else {
+                    self.content = yqlResponse.query.results.body;
+                    self.update();
+                }
+            }
+        });
+    }
+    self.requestData();
+}
+
 riot.tag('home', tag_home_tpl.innerHTML, tag_home);
 riot.tag('dump', tag_dump_tpl.innerHTML, tag_dump);
-riot.tag('faq', tag_faq_tpl.innerHTML, function(){});
+riot.tag('faq', tag_faq_tpl.innerHTML, tag_faq);
 riot.tag('page404', tag_page404_tpl.innerHTML, function(){});
 
 mountedContentTag = null;
@@ -267,7 +349,7 @@ riot.route(function(part1, part2) {
         mountedContentTag = riot.mount('home')[0];
     } else if (part1 && !part2) {
         console.log('[route]: dump');
-        mountedContentTag = riot.mount('dump', {dump_id: part1})[0];
+        mountedContentTag = riot.mount('dump', {dumpId: part1})[0];
     } else if (part1 == 'help' && part2 == 'faq') {
         console.log('[route]: faq');
         mountedContentTag = riot.mount('faq')[0];

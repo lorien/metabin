@@ -37,7 +37,6 @@ What external pastebin services are used?
 -----------------------------------------
 
 The app can use any pastebin that allows to upload content by simple POST request.
-At the current moment the dumpz.org service is used.
 
 
 How do you submit AJAX POST request to external domains?
